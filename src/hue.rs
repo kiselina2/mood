@@ -1,6 +1,8 @@
 //! Hue bridge communication: REST control and DTLS Entertainment streaming.
 
-use std::{error::Error, future::AsyncDrop, sync::Arc};
+use std::{future::AsyncDrop, sync::Arc};
+
+use anyhow::Result;
 
 use dtls::{
     cipher_suite::CipherSuiteId,
@@ -64,7 +66,7 @@ impl HueEntertainment {
         dtls_connection: DTLSConn,
         settings: AppSettings,
         lamp_snapshots: Vec<LampSnapshot>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self> {
         let [entertainment_config_id] = settings.config.get(["ENTERTAINMENT_CONFIG_ID"])?;
 
         let mut packet = Vec::with_capacity(30 + entertainment_config_id.len());
@@ -88,7 +90,7 @@ impl HueEntertainment {
     }
 
     /// Sends colors for two lights over the active DTLS connection.
-    pub async fn send_colors(&mut self, colors: &[Color; 2]) -> Result<(), Box<dyn Error>> {
+    pub async fn send_colors(&mut self, colors: &[Color; 2]) -> Result<()> {
         self.packet.push(0x00); // light id
         self.packet.extend_from_slice(&colors[0].r.to_be_bytes()); // R
         self.packet.extend_from_slice(&colors[0].g.to_be_bytes()); // G
@@ -108,7 +110,7 @@ impl HueEntertainment {
 
 impl Hue {
     /// Creates a new `Hue` client, loading the app key from settings and pinning the bridge certificate.
-    pub fn new(settings: AppSettings) -> Result<Self, Box<dyn Error>> {
+    pub fn new(settings: AppSettings) -> Result<Self> {
         let mut headers = HeaderMap::new();
         headers.insert(
             "hue-application-key",
@@ -135,7 +137,7 @@ impl Hue {
     /// Returns an error if the bridge is unreachable, credentials are invalid, or
     /// the DTLS handshake fails. On DTLS failure, the entertainment mode is stopped
     /// before returning.
-    pub async fn start_entertainment(self) -> Result<HueEntertainment, Box<dyn Error>> {
+    pub async fn start_entertainment(self) -> Result<HueEntertainment> {
         let [client_key] = self.settings.secrets.get(["CLIENT_KEY"])?;
 
         let [bridge_ip, bridge_port, app_id, entertainment_config_id] =
@@ -258,7 +260,7 @@ async fn set_entertainment_state(
     bridge_ip: &str,
     entertainment_config_id: &str,
     action: EntertainmentAction,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let action: &str = action.into();
     let response = client
         .put(format!(
@@ -277,7 +279,7 @@ async fn fetch_light_ids(
     client: &Client,
     bridge_ip: &str,
     entertainment_config_id: &str,
-) -> Result<Vec<String>, Box<dyn Error>> {
+) -> Result<Vec<String>> {
     let response = client
         .get(format!(
             "https://{bridge_ip}/clip/v2/resource/entertainment_configuration/{entertainment_config_id}"
@@ -305,7 +307,7 @@ async fn fetch_lamp_snapshot(
     client: &Client,
     bridge_ip: &str,
     light_id: &str,
-) -> Result<LampSnapshot, Box<dyn Error>> {
+) -> Result<LampSnapshot> {
     let response = client
         .get(format!(
             "https://{bridge_ip}/clip/v2/resource/light/{light_id}"
@@ -350,7 +352,7 @@ async fn restore_lamp(
     client: &Client,
     bridge_ip: &str,
     snapshot: &LampSnapshot,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let mut body = serde_json::json!({
         "on": { "on": snapshot.on }
     });

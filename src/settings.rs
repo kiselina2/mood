@@ -4,23 +4,25 @@
 //! Secrets are stored in the OS keyring.
 //! Environment variables override both stores when present.
 
-use std::{collections::HashMap, env, error::Error, fs, io};
+use std::{collections::HashMap, env, fs, io};
 
-fn config_path() -> Result<std::path::PathBuf, Box<dyn Error>> {
+use anyhow::{Result, anyhow};
+
+fn config_path() -> Result<std::path::PathBuf> {
     Ok(dirs::config_dir()
-        .ok_or("could not find config directory")?
+        .ok_or_else(|| anyhow!("could not find config directory"))?
         .join("mood")
         .join("config.json"))
 }
 
-fn prompt(label: &str) -> Result<String, Box<dyn Error>> {
+fn prompt(label: &str) -> Result<String> {
     print!("{label}: ");
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     Ok(input.trim().to_string())
 }
 
-fn prompt_with_status(label: &str, is_set: bool) -> Result<Option<String>, Box<dyn Error>> {
+fn prompt_with_status(label: &str, is_set: bool) -> Result<Option<String>> {
     if is_set {
         print!("{label} [set, press Enter to keep]: ");
     } else {
@@ -70,7 +72,7 @@ impl AppConfig {
         }
     }
 
-    fn load() -> Result<Self, Box<dyn Error>> {
+    fn load() -> Result<Self> {
         let mut config = AppConfig::new();
         let path = config_path()?;
         if path.exists() {
@@ -100,25 +102,28 @@ impl AppConfig {
     /// # Errors
     ///
     /// Returns an error if any key is not a known config field.
-    pub fn get<const N: usize>(&self, keys: [&str; N]) -> Result<[&String; N], Box<dyn Error>> {
+    pub fn get<const N: usize>(&self, keys: [&str; N]) -> Result<[&String; N]> {
         let mut results = Vec::with_capacity(N);
         for key in keys {
             results.push(
                 self.entries
                     .get(key)
                     .map(|e| &e.value)
-                    .ok_or_else(|| format!("unknown config field: {key}"))?,
+                    .ok_or_else(|| anyhow!("unknown config field: {key}"))?,
             );
         }
         Ok(results.try_into().unwrap())
     }
 
-    fn save(&self) -> Result<(), Box<dyn Error>> {
+    fn save(&self) -> Result<()> {
         if !self.dirty {
             return Ok(());
         }
         let path = config_path()?;
-        fs::create_dir_all(path.parent().ok_or("invalid config path")?)?;
+        fs::create_dir_all(
+            path.parent()
+                .ok_or_else(|| anyhow!("invalid config path"))?,
+        )?;
         let values: HashMap<&str, &str> = self
             .entries
             .iter()
@@ -128,7 +133,7 @@ impl AppConfig {
         Ok(())
     }
 
-    fn setup(&mut self) -> Result<(), Box<dyn Error>> {
+    fn setup(&mut self) -> Result<()> {
         let mut changed = false;
         for entry in self.entries.values_mut() {
             if let Some(v) = prompt_with_status(entry.label, !entry.value.is_empty())? {
@@ -190,7 +195,7 @@ impl AppSecrets {
         }
     }
 
-    fn load() -> Result<Self, Box<dyn Error>> {
+    fn load() -> Result<Self> {
         let mut secrets = AppSecrets::new();
         for (key, entry) in secrets.entries.iter_mut() {
             if let Ok(v) = env::var(key) {
@@ -215,20 +220,20 @@ impl AppSecrets {
     /// # Errors
     ///
     /// Returns an error if any key is not a known secret.
-    pub fn get<const N: usize>(&self, keys: [&str; N]) -> Result<[&String; N], Box<dyn Error>> {
+    pub fn get<const N: usize>(&self, keys: [&str; N]) -> Result<[&String; N]> {
         let mut results = Vec::with_capacity(N);
         for key in keys {
             results.push(
                 self.entries
                     .get(key)
                     .map(|e| &e.value)
-                    .ok_or_else(|| format!("unknown secret: {key}"))?,
+                    .ok_or_else(|| anyhow!("unknown secret: {key}"))?,
             );
         }
         Ok(results.try_into().unwrap())
     }
 
-    fn save(&self) -> Result<(), Box<dyn Error>> {
+    fn save(&self) -> Result<()> {
         for entry in self.entries.values() {
             if entry.dirty {
                 keyring::Entry::new("mood", entry.keyring_key)?.set_password(&entry.value)?;
@@ -237,7 +242,7 @@ impl AppSecrets {
         Ok(())
     }
 
-    fn setup(&mut self) -> Result<(), Box<dyn Error>> {
+    fn setup(&mut self) -> Result<()> {
         for entry in self.entries.values_mut() {
             if let Some(v) = prompt_with_status(entry.label, !entry.value.is_empty())? {
                 entry.value = v;
@@ -256,7 +261,7 @@ pub struct AppSettings {
 
 impl AppSettings {
     /// Loads both config and secrets, prompting for any missing values.
-    pub fn load() -> Result<Self, Box<dyn Error>> {
+    pub fn load() -> Result<Self> {
         Ok(AppSettings {
             config: AppConfig::load()?,
             secrets: AppSecrets::load()?,
@@ -264,7 +269,7 @@ impl AppSettings {
     }
 
     /// Runs the interactive setup wizard, prompting for all config and secret values.
-    pub fn run_setup(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn run_setup(&mut self) -> Result<()> {
         self.config.setup()?;
         self.secrets.setup()?;
         Ok(())

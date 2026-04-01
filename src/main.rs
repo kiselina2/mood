@@ -3,7 +3,7 @@ mod hue;
 mod settings;
 mod utils;
 
-use std::{error::Error, pin::pin, time::Duration};
+use std::{pin::pin, time::Duration};
 
 use dotenvy::dotenv;
 use rustls::crypto::aws_lc_rs::default_provider;
@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
     let mut settings = AppSettings::load()?;
