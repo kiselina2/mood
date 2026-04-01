@@ -1,3 +1,9 @@
+//! Application configuration and secrets management.
+//!
+//! Non-secret settings are persisted to a JSON file in the OS config directory.
+//! Secrets are stored in the OS keyring.
+//! Environment variables override both stores when present.
+
 use std::{collections::HashMap, env, error::Error, fs, io};
 
 fn config_path() -> Result<std::path::PathBuf, Box<dyn Error>> {
@@ -31,6 +37,10 @@ struct ConfigEntry {
     value: String,
 }
 
+/// Non-secret application configuration loaded from the OS config directory.
+///
+/// Missing values are prompted for interactively on first run and saved for subsequent runs.
+/// Any key can be overridden at runtime by setting the corresponding environment variable.
 pub struct AppConfig {
     entries: HashMap<&'static str, ConfigEntry>,
     dirty: bool,
@@ -85,6 +95,11 @@ impl AppConfig {
         Ok(config)
     }
 
+    /// Retrieves values for the given keys in one call, returning them as a fixed-size array.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any key is not a known config field.
     pub fn get<const N: usize>(&self, keys: [&str; N]) -> Result<[&String; N], Box<dyn Error>> {
         let mut results = Vec::with_capacity(N);
         for key in keys {
@@ -129,12 +144,20 @@ impl AppConfig {
 }
 
 struct SecretEntry {
+    /// Human readable label describing what the secret holds
     label: &'static str,
     keyring_key: &'static str,
     value: String,
     dirty: bool,
 }
 
+/// Secrets (API keys) loaded from the OS keyring.
+///
+/// Missing values are prompted for interactively on first run and persisted to the keyring.
+/// Any key can be overridden at runtime by setting the corresponding environment variable.
+///
+/// The `keyring_key` field on each entry is used as a label within the keyring to
+/// distinguish secrets — it is not an OS username.
 pub struct AppSecrets {
     entries: HashMap<&'static str, SecretEntry>,
 }
@@ -187,6 +210,11 @@ impl AppSecrets {
         Ok(secrets)
     }
 
+    /// Retrieves values for the given keys in one call, returning them as a fixed-size array.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any key is not a known secret.
     pub fn get<const N: usize>(&self, keys: [&str; N]) -> Result<[&String; N], Box<dyn Error>> {
         let mut results = Vec::with_capacity(N);
         for key in keys {
@@ -220,12 +248,14 @@ impl AppSecrets {
     }
 }
 
+/// Combined application settings: non-secret config and secrets.
 pub struct AppSettings {
     pub config: AppConfig,
     pub secrets: AppSecrets,
 }
 
 impl AppSettings {
+    /// Loads both config and secrets, prompting for any missing values.
     pub fn load() -> Result<Self, Box<dyn Error>> {
         Ok(AppSettings {
             config: AppConfig::load()?,
@@ -233,6 +263,7 @@ impl AppSettings {
         })
     }
 
+    /// Runs the interactive setup wizard, prompting for all config and secret values.
     pub fn run_setup(&mut self) -> Result<(), Box<dyn Error>> {
         self.config.setup()?;
         self.secrets.setup()?;

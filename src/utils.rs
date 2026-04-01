@@ -1,8 +1,15 @@
+//! Shared utilities
+
+/// Prints to stdout in debug builds only. Compiles to nothing in release builds.
 #[macro_export]
 macro_rules! dbg_print {
     ($($arg:tt)*) => { #[cfg(debug_assertions)] println!($($arg)*); }
 }
 
+/// Waits for a graceful shutdown signal from the OS.
+///
+/// On Unix, resolves on `SIGINT` or `SIGTERM`.
+/// On Windows, resolves on `Ctrl+C`, `CTRL_CLOSE_EVENT`, or `CTRL_SHUTDOWN_EVENT`.
 pub async fn graceful_shutdown_signal() {
     #[cfg(unix)]
     {

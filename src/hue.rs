@@ -1,3 +1,5 @@
+//! Hue bridge communication: REST control and DTLS Entertainment streaming.
+
 use std::{error::Error, future::AsyncDrop, sync::Arc};
 
 use dtls::{
@@ -13,11 +15,17 @@ use tokio::net::UdpSocket;
 
 use crate::{dbg_print, settings::AppSettings};
 
+/// Entry point for interacting with the Hue bridge via REST.
+///
+/// Use [`Hue::start_entertainment`] to begin a streaming session.
 pub struct Hue {
     rest_client: Client,
     settings: AppSettings,
 }
 
+/// An active Hue Entertainment streaming session over DTLS.
+///
+/// Restores all lamp states and closes the DTLS connection on drop via [`AsyncDrop`].
 pub struct HueEntertainment {
     rest_client: Client,
     dtls_connection: DTLSConn,
@@ -27,6 +35,7 @@ pub struct HueEntertainment {
     header_len: usize,
 }
 
+/// An RGB color with 16-bit channel depth, matching the Hue Entertainment protocol.
 pub struct Color {
     pub r: u16,
     pub g: u16,
@@ -43,6 +52,7 @@ struct LampSnapshot {
 }
 
 impl Color {
+    /// Creates a new color from 16-bit RGB components.
     pub fn new(r: u16, g: u16, b: u16) -> Self {
         Color { r, g, b }
     }
@@ -77,6 +87,7 @@ impl HueEntertainment {
         })
     }
 
+    /// Sends colors for two lights over the active DTLS connection.
     pub async fn send_colors(&mut self, colors: &[Color; 2]) -> Result<(), Box<dyn Error>> {
         self.packet.push(0x00); // light id
         self.packet.extend_from_slice(&colors[0].r.to_be_bytes()); // R
@@ -96,6 +107,7 @@ impl HueEntertainment {
 }
 
 impl Hue {
+    /// Creates a new `Hue` client, loading the app key from settings and pinning the bridge certificate.
     pub fn new(settings: AppSettings) -> Result<Self, Box<dyn Error>> {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -113,6 +125,16 @@ impl Hue {
         })
     }
 
+    /// Starts a Hue Entertainment session.
+    ///
+    /// Fetches light IDs, snapshots current lamp states, activates the entertainment
+    /// configuration on the bridge, and establishes the DTLS connection for streaming.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bridge is unreachable, credentials are invalid, or
+    /// the DTLS handshake fails. On DTLS failure, the entertainment mode is stopped
+    /// before returning.
     pub async fn start_entertainment(self) -> Result<HueEntertainment, Box<dyn Error>> {
         let [client_key] = self.settings.secrets.get(["CLIENT_KEY"])?;
 
