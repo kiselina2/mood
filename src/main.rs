@@ -33,7 +33,8 @@ async fn main() -> anyhow::Result<()> {
     let (r, g, b) = (100u16 * 255, 255u16 * 255, 10u16 * 255);
 
     let mut shutdown = pin!(graceful_shutdown_signal());
-    let mut ticker = interval(Duration::from_millis(40));
+    let mut ticker = interval(Duration::from_millis(20));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let mut hue_entertainment = Hue::new(settings)?.start_entertainment().await?;
 
