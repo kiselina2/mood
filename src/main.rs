@@ -38,18 +38,16 @@ async fn main() -> anyhow::Result<()> {
 
     let mut hue_entertainment = Hue::new(settings)?.start_entertainment().await?;
 
-    let loop_result = loop {
+    loop {
         select! {
-            _ = &mut shutdown => { break Ok(()); }
+            _ = &mut shutdown => { break }
             _ = ticker.tick() => {
                 if let Err(e) = hue_entertainment.send_colors(&[Color::new(r, g, b), Color::new(r, g, b)]).await {
-                    break Err(e);
+                    dbg_print!("{e}");
                 }
             }
         }
-    };
-
-    loop_result?;
+    }
 
     Ok(())
 }
