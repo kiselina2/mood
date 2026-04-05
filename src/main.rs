@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let options = scap::capturer::Options {
-        fps: 1,
+        fps: 60,
         output_resolution: scap::capturer::Resolution::_480p,
         ..Default::default()
     };
@@ -62,29 +62,25 @@ async fn main() -> anyhow::Result<()> {
     capturer.start_capture();
 
     let mut loop_body = async || {
-        let frame = match capturer.get_next_frame() {
-            Err(e) => {
-                dbg_print!("{e}");
-                return;
-            }
-            Ok(frame) => frame,
-        };
+        let mut frame = None;
+        while let Ok(inner_frame) = capturer.get_next_frame() {
+            frame = Some(inner_frame);
+        }
 
-        let Frame::BGRx(frame) = frame else {
+        let Some(Frame::BGRx(frame)) = frame else {
             return;
         };
 
-        let middle_pixel_index: usize = (4 * frame.width * (frame.height / 2)) as usize;
+        let middle_pixel_index: usize =
+            (4 * (frame.width * (frame.height / 2) + (frame.width / 2))) as usize;
 
-        let [r, g, b]: &[u8; 3] = &frame.data[middle_pixel_index..middle_pixel_index + 3]
+        let [b, g, r]: &[u8; 3] = &frame.data[middle_pixel_index..middle_pixel_index + 3]
             .try_into()
             .unwrap();
 
         let r: u16 = *r as u16 * 255;
         let g: u16 = *g as u16 * 255;
         let b: u16 = *b as u16 * 255;
-
-        println!("{r} {g} {b}"); // IF left uncommented, leaks memory
 
         let colors = &[Color::new(r, g, b), Color::new(r, g, b)];
 
