@@ -70,6 +70,21 @@ async fn main() -> anyhow::Result<()> {
     let mut color_buffer1 = ColorBuffer::<COLOR_BUFFER_LENGTH>::new();
     let mut color_buffer2 = ColorBuffer::<COLOR_BUFFER_LENGTH>::new();
 
+    let mut send_colors =
+        async |color_buffer1: &ColorBuffer<COLOR_BUFFER_LENGTH>,
+               color_buffer2: &ColorBuffer<COLOR_BUFFER_LENGTH>| {
+            let first_avg = color_buffer1.avg();
+
+            dbg_print!("{:?}", first_avg);
+
+            if let Err(e) = hue_entertainment
+                .send_colors(&[first_avg, color_buffer2.avg()])
+                .await
+            {
+                dbg_print!("{e:?}");
+            }
+        };
+
     let mut loop_body = async || {
         let mut frame = None;
         while let Ok(inner_frame) = capturer.get_next_frame() {
@@ -77,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         let Some(Frame::BGRx(frame)) = frame else {
+            send_colors(&color_buffer1, &color_buffer2).await;
             return;
         };
 
@@ -85,14 +101,7 @@ async fn main() -> anyhow::Result<()> {
         color_buffer1.push(color1);
         color_buffer2.push(color2);
 
-        dbg_print!("{:?}", color_buffer1.avg());
-
-        if let Err(e) = hue_entertainment
-            .send_colors(&[color_buffer1.avg(), color_buffer2.avg()])
-            .await
-        {
-            dbg_print!("{e}");
-        }
+        send_colors(&color_buffer1, &color_buffer2).await
     };
 
     loop {
@@ -149,4 +158,3 @@ fn get_average_colors_from_frame(frame: &BGRxFrame) -> [Color; 2] {
         },
     ]
 }
-
