@@ -71,20 +71,9 @@ async fn main() -> anyhow::Result<()> {
             return;
         };
 
-        let middle_pixel_index: usize =
-            (4 * (frame.width * (frame.height / 2) + (frame.width / 2))) as usize;
+        let colors = get_average_colors_from_frame(&frame);
 
-        let [b, g, r]: &[u8; 3] = &frame.data[middle_pixel_index..middle_pixel_index + 3]
-            .try_into()
-            .unwrap();
-
-        let r: u16 = *r as u16 * 255;
-        let g: u16 = *g as u16 * 255;
-        let b: u16 = *b as u16 * 255;
-
-        let colors = &[Color::new(r, g, b), Color::new(r, g, b)];
-
-        if let Err(e) = hue_entertainment.send_colors(colors).await {
+        if let Err(e) = hue_entertainment.send_colors(&colors).await {
             dbg_print!("{e}");
         }
     };
@@ -99,6 +88,48 @@ async fn main() -> anyhow::Result<()> {
     capturer.stop_capture();
 
     Ok(())
+}
+
+fn get_average_colors_from_frame(frame: &BGRxFrame) -> [Color; 2] {
+    let width = frame.width as usize;
+    let row_bytes = 4 * width;
+
+    let skip_rows = row_bytes * (frame.height as f32 * 0.1) as usize;
+    let data = &frame.data[skip_rows..frame.data.len() - skip_rows];
+
+    let left_start = (width as f32 * 0.05) as usize;
+    let left_end = (width as f32 * 0.10) as usize;
+    let right_start = (width as f32 * 0.90) as usize;
+    let right_end = (width as f32 * 0.95) as usize;
+
+    let num_rows = data.len() / row_bytes;
+    let count = ((left_end - left_start) * num_rows) as i32;
+
+    let sum_strip = |start: usize, end: usize| -> (i32, i32, i32) {
+        data.chunks_exact(row_bytes).fold((0, 0, 0), |(r, g, b), row| {
+            row[4 * start..4 * end]
+                .chunks_exact(4)
+                .fold((r, g, b), |(r, g, b), p| {
+                    (r + p[2] as i32, g + p[1] as i32, b + p[0] as i32)
+                })
+        })
+    };
+
+    let (r1, g1, b1) = sum_strip(left_start, left_end);
+    let (r2, g2, b2) = sum_strip(right_start, right_end);
+
+    [
+        Color {
+            r: (r1 / count) as u16 * 257,
+            g: (g1 / count) as u16 * 257,
+            b: (b1 / count) as u16 * 257,
+        },
+        Color {
+            r: (r2 / count) as u16 * 257,
+            g: (g2 / count) as u16 * 257,
+            b: (b2 / count) as u16 * 257,
+        },
+    ]
 }
 
 // fn col_sum(image: &Vec<u8>, width: i32, skip: usize, take: usize) -> [usize; 3] {
