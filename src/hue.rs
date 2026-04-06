@@ -1,6 +1,6 @@
 //! Hue bridge communication: REST control and DTLS Entertainment streaming.
 
-use std::{future::AsyncDrop, sync::Arc};
+use std::{array, future::AsyncDrop, ops::Deref, sync::Arc};
 
 use anyhow::Result;
 
@@ -37,11 +37,59 @@ pub struct HueEntertainment {
     header_len: usize,
 }
 
+#[derive(Default, Clone, Debug)]
 /// An RGB color with 16-bit channel depth, matching the Hue Entertainment protocol.
 pub struct Color {
     pub r: u16,
     pub g: u16,
     pub b: u16,
+}
+
+pub struct ColorBuffer<const N: usize> {
+    buffer: [Color; N],
+    pos: usize,
+}
+
+impl<const N: usize> ColorBuffer<N> {
+    pub fn new() -> Self {
+        ColorBuffer {
+            buffer: array::repeat(Color::default()),
+            pos: 0,
+        }
+    }
+
+    pub fn push(&mut self, color: Color) {
+        self.buffer[self.pos] = color;
+        self.pos = (self.pos + 1) % N
+    }
+
+    pub fn avg(&self) -> Color {
+        let sum: [u32; 3] = self.iter().fold([0, 0, 0], |mut acc, color| {
+            acc[0] += color.r as u32;
+            acc[1] += color.g as u32;
+            acc[2] += color.b as u32;
+            acc
+        });
+
+        Color::new(
+            (sum[0] / N as u32) as u16,
+            (sum[1] / N as u32) as u16,
+            (sum[2] / N as u32) as u16,
+        )
+    }
+}
+
+impl<const N: usize> Default for ColorBuffer<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> Deref for ColorBuffer<N> {
+    type Target = [Color; N];
+    fn deref(&self) -> &Self::Target {
+        &self.buffer
+    }
 }
 
 struct LampSnapshot {
@@ -323,7 +371,8 @@ async fn fetch_lamp_snapshot(
 
     let on = data["on"]["on"].as_bool().unwrap_or(false);
     let brightness = data["dimming"]["brightness"].as_f64();
-    let color_xy = data["color"]["xy"]["x"].as_f64()
+    let color_xy = data["color"]["xy"]["x"]
+        .as_f64()
         .zip(data["color"]["xy"]["y"].as_f64());
     let color_temperature = data["color_temperature"]["mirek"]
         .as_u64()
@@ -348,11 +397,7 @@ async fn fetch_lamp_snapshot(
     })
 }
 
-async fn restore_lamp(
-    client: &Client,
-    bridge_ip: &str,
-    snapshot: &LampSnapshot,
-) -> Result<()> {
+async fn restore_lamp(client: &Client, bridge_ip: &str, snapshot: &LampSnapshot) -> Result<()> {
     let mut body = serde_json::json!({
         "on": { "on": snapshot.on }
     });

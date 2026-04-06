@@ -15,10 +15,16 @@ use scap::{
 use tokio::{select, time::interval};
 
 use crate::{
-    hue::{Color, Hue},
+    hue::{Color, ColorBuffer, Hue},
     settings::AppSettings,
     utils::graceful_shutdown_signal,
 };
+
+const FPS: u32 = 60;
+const FRAMES_SENT_PER_SECOND: u32 = 50;
+const COLOR_SMOOTHING_IN_MILLIS: u32 = 100;
+const COLOR_BUFFER_LENGTH: usize =
+    ((FRAMES_SENT_PER_SECOND * COLOR_SMOOTHING_IN_MILLIS) / 1000) as usize;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let options = scap::capturer::Options {
-        fps: 60,
+        fps: FPS,
         output_resolution: scap::capturer::Resolution::_480p,
         ..Default::default()
     };
@@ -55,11 +61,14 @@ async fn main() -> anyhow::Result<()> {
     let mut capturer = Capturer::build(options)?;
 
     let mut shutdown = pin!(graceful_shutdown_signal());
-    let mut ticker = interval(Duration::from_millis(20));
+    let mut ticker = interval(Duration::from_millis(1000 / FRAMES_SENT_PER_SECOND as u64));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let mut hue_entertainment = Hue::new(settings)?.start_entertainment().await?;
     capturer.start_capture();
+
+    let mut color_buffer1 = ColorBuffer::<COLOR_BUFFER_LENGTH>::new();
+    let mut color_buffer2 = ColorBuffer::<COLOR_BUFFER_LENGTH>::new();
 
     let mut loop_body = async || {
         let mut frame = None;
@@ -71,9 +80,17 @@ async fn main() -> anyhow::Result<()> {
             return;
         };
 
-        let colors = get_average_colors_from_frame(&frame);
+        let [color1, color2] = get_average_colors_from_frame(&frame);
 
-        if let Err(e) = hue_entertainment.send_colors(&colors).await {
+        color_buffer1.push(color1);
+        color_buffer2.push(color2);
+
+        dbg_print!("{:?}", color_buffer1.avg());
+
+        if let Err(e) = hue_entertainment
+            .send_colors(&[color_buffer1.avg(), color_buffer2.avg()])
+            .await
+        {
             dbg_print!("{e}");
         }
     };
@@ -106,13 +123,14 @@ fn get_average_colors_from_frame(frame: &BGRxFrame) -> [Color; 2] {
     let count = ((left_end - left_start) * num_rows) as i32;
 
     let sum_strip = |start: usize, end: usize| -> (i32, i32, i32) {
-        data.chunks_exact(row_bytes).fold((0, 0, 0), |(r, g, b), row| {
-            row[4 * start..4 * end]
-                .chunks_exact(4)
-                .fold((r, g, b), |(r, g, b), p| {
-                    (r + p[2] as i32, g + p[1] as i32, b + p[0] as i32)
-                })
-        })
+        data.chunks_exact(row_bytes)
+            .fold((0, 0, 0), |(r, g, b), row| {
+                row[4 * start..4 * end]
+                    .chunks_exact(4)
+                    .fold((r, g, b), |(r, g, b), p| {
+                        (r + p[2] as i32, g + p[1] as i32, b + p[0] as i32)
+                    })
+            })
     };
 
     let (r1, g1, b1) = sum_strip(left_start, left_end);
@@ -132,15 +150,3 @@ fn get_average_colors_from_frame(frame: &BGRxFrame) -> [Color; 2] {
     ]
 }
 
-// fn col_sum(image: &Vec<u8>, width: i32, skip: usize, take: usize) -> [usize; 3] {
-//     image
-//         .chunks(4 * width as usize)
-//         .map(|row| row.chunks(4).skip(skip).take(take))
-//         .flatten()
-//         .fold([0, 0, 0], |mut acc, dat| {
-//             acc[0] += dat[2] as usize;
-//             acc[1] += dat[1] as usize;
-//             acc[2] += dat[0] as usize;
-//             acc
-//         })
-// }
