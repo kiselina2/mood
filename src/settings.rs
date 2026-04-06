@@ -4,7 +4,11 @@
 //! Secrets are stored in the OS keyring.
 //! Environment variables override both stores when present.
 
-use std::{collections::HashMap, env, fs, io};
+use std::{
+    collections::HashMap,
+    env, fs,
+    io::{self, Write, stdout},
+};
 
 use anyhow::{Result, anyhow};
 
@@ -17,6 +21,7 @@ fn config_path() -> Result<std::path::PathBuf> {
 
 fn prompt(label: &str) -> Result<String> {
     print!("{label}: ");
+    stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     Ok(input.trim().to_string())
