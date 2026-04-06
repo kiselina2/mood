@@ -206,10 +206,12 @@ impl AppSecrets {
             if let Ok(v) = env::var(key) {
                 entry.value = v;
             } else {
-                entry.value = keyring::Entry::new("mood", entry.keyring_key)
-                    .ok()
-                    .and_then(|e| e.get_password().ok())
-                    .unwrap_or_default();
+                let keyring_entry = keyring::Entry::new("mood", entry.keyring_key)?;
+                entry.value = match keyring_entry.get_password() {
+                    Ok(v) => v,
+                    Err(keyring::Error::NoEntry) => String::new(),
+                    Err(e) => return Err(e.into()),
+                };
                 if entry.value.is_empty() {
                     entry.value = prompt(entry.label)?;
                     entry.dirty = true;
