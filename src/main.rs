@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
                color_buffer2: &ColorBuffer<COLOR_BUFFER_LENGTH>| {
             let first_avg = color_buffer1.avg();
 
-            dbg_print!("{:?}", first_avg);
+            // dbg_print!("{:?}", first_avg);
 
             if let Err(e) = hue_entertainment
                 .send_colors(&[first_avg, color_buffer2.avg()])
@@ -92,6 +92,9 @@ async fn main() -> anyhow::Result<()> {
         }
 
         let Some(Frame::BGRx(frame)) = frame else {
+            color_buffer1.debug();
+            color_buffer1.dupe_last();
+            color_buffer2.dupe_last();
             send_colors(&color_buffer1, &color_buffer2).await;
             return;
         };

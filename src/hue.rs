@@ -1,6 +1,6 @@
 //! Hue bridge communication: REST control and DTLS Entertainment streaming.
 
-use std::{array, future::AsyncDrop, ops::Deref, sync::Arc};
+use std::{array, fmt::Display, future::AsyncDrop, ops::Deref, sync::Arc};
 
 use anyhow::Result;
 
@@ -45,9 +45,27 @@ pub struct Color {
     pub b: u16,
 }
 
+impl Display for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(r:{}, g:{}, b:{})", self.r, self.g, self.b)
+    }
+}
+
 pub struct ColorBuffer<const N: usize> {
     buffer: [Color; N],
     pos: usize,
+}
+
+impl<const N: usize> Display for ColorBuffer<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[\n")?;
+        for color in &self.buffer {
+            write!(f, "\t{color},\n")?;
+        }
+
+        write!(f, "]")?;
+        Ok(())
+    }
 }
 
 impl<const N: usize> ColorBuffer<N> {
@@ -61,6 +79,14 @@ impl<const N: usize> ColorBuffer<N> {
     pub fn push(&mut self, color: Color) {
         self.buffer[self.pos] = color;
         self.pos = (self.pos + 1) % N
+    }
+
+    pub fn debug(&self) {
+        dbg_print!("{}", self);
+    }
+
+    pub fn dupe_last(&mut self) {
+        self.push(self.buffer[(self.pos + N - 1) % N].clone());
     }
 
     pub fn avg(&self) -> Color {
