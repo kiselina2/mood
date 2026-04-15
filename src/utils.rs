@@ -6,11 +6,12 @@ macro_rules! dbg_print {
     ($($arg:tt)*) => { #[cfg(debug_assertions)] println!($($arg)*); }
 }
 
-/// Waits for a graceful shutdown signal from the OS.
+/// Waits for a graceful shutdown signal from the OS or the tray icon.
 ///
 /// On Unix, resolves on `SIGINT` or `SIGTERM`.
 /// On Windows, resolves on `Ctrl+C`, `CTRL_CLOSE_EVENT`, or `CTRL_SHUTDOWN_EVENT`.
-pub async fn graceful_shutdown_signal() {
+/// Also resolves when the tray sends a quit signal via `tray_quit`.
+pub async fn graceful_shutdown_signal(tray_quit: tokio::sync::oneshot::Receiver<()>) {
     #[cfg(unix)]
     {
         use tokio::{
@@ -24,6 +25,7 @@ pub async fn graceful_shutdown_signal() {
         select! {
             _ = sigint.recv() => {}
             _ = sigterm.recv() => {}
+            _ = tray_quit => {}
         }
     }
     #[cfg(windows)]
@@ -36,6 +38,7 @@ pub async fn graceful_shutdown_signal() {
             _ = tokio::signal::ctrl_c() => {}
             _ = close.recv() => {}
             _ = shutdown.recv() => {}
+            _ = tray_quit => {}
         }
     }
 }

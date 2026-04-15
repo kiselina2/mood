@@ -1,6 +1,7 @@
 #![feature(async_drop)]
 mod hue;
 mod settings;
+mod tray;
 mod utils;
 
 use std::{pin::pin, time::Duration};
@@ -12,7 +13,7 @@ use scap::{
     capturer::Capturer,
     frame::{BGRxFrame, Frame},
 };
-use tokio::{select, time::interval};
+use tokio::{select, sync::oneshot, time::interval};
 
 use crate::{
     hue::{Color, ColorBuffer, Hue},
@@ -26,8 +27,7 @@ const COLOR_SMOOTHING_IN_MILLIS: u32 = 100;
 const COLOR_BUFFER_LENGTH: usize =
     ((FRAMES_SENT_PER_SECOND * COLOR_SMOOTHING_IN_MILLIS) / 1000) as usize;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
     default_provider()
@@ -41,17 +41,33 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Check if the platform is supported
     if !scap::is_supported() {
         return Err(anyhow!("❌ Platform not supported"));
     }
 
-    // Check if we have permission to capture screen
-    // If we don't, request it.
     if !scap::has_permission() && !scap::request_permission() {
         return Err(anyhow!("❌ Permission denied"));
     }
 
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+    let worker = std::thread::spawn(move || {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async_main(settings, shutdown_rx))
+    });
+
+    tray::run(shutdown_tx)?;
+
+    worker.join().unwrap()
+}
+
+async fn async_main(
+    settings: AppSettings,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> anyhow::Result<()> {
     let options = scap::capturer::Options {
         fps: FPS,
         output_resolution: scap::capturer::Resolution::_480p,
@@ -60,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut capturer = Capturer::build(options)?;
 
-    let mut shutdown = pin!(graceful_shutdown_signal());
+    let mut shutdown = pin!(graceful_shutdown_signal(shutdown_rx));
     let mut ticker = interval(Duration::from_millis(1000 / FRAMES_SENT_PER_SECOND as u64));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
