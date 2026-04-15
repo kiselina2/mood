@@ -127,8 +127,8 @@ fn get_average_colors_from_frame(frame: &BGRxFrame) -> [Color; 2] {
     let data = &frame.data[skip_rows..frame.data.len() - skip_rows];
 
     let left_start = (width as f32 * 0.05) as usize;
-    let left_end = (width as f32 * 0.10) as usize;
-    let right_start = (width as f32 * 0.90) as usize;
+    let left_end = (width as f32 * 0.20) as usize;
+    let right_start = (width as f32 * 0.80) as usize;
     let right_end = (width as f32 * 0.95) as usize;
 
     let num_rows = data.len() / row_bytes;
