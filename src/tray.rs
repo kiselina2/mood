@@ -16,15 +16,12 @@ pub fn run(shutdown_tx: oneshot::Sender<()>) -> anyhow::Result<()> {
     menu.append(&quit_item)?;
 
     let icon = {
-        let size = 32usize;
-        let mut data = vec![0u8; size * size * 4];
-        for pixel in data.chunks_exact_mut(4) {
-            pixel[0] = 255; // R
-            pixel[1] = 160; // G
-            pixel[2] = 50;  // B  (warm amber)
-            pixel[3] = 255; // A
-        }
-        tray_icon::Icon::from_rgba(data, size as u32, size as u32)?
+        let png_bytes = include_bytes!("../icon.png");
+        let img = image::load_from_memory(png_bytes)
+            .map_err(|e| anyhow!("failed to load tray icon: {e}"))?
+            .into_rgba8();
+        let (w, h) = img.dimensions();
+        tray_icon::Icon::from_rgba(img.into_raw(), w, h)?
     };
 
     let _tray = TrayIconBuilder::new()
